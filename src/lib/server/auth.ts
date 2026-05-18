@@ -27,7 +27,7 @@ export function createSession(event: RequestEvent, userId: number, remember: boo
   db.createSession(token, userId, expiresAt);
   event.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: true,
+    secure: event.url.protocol === 'https:',
     sameSite: 'lax',
     maxAge: ttl / 1000,
     path: '/'

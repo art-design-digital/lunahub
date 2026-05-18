@@ -1,11 +1,14 @@
 // src/routes/login/+page.server.ts
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
+import bcrypt from 'bcryptjs';
 import { db } from '$lib/server/db.js';
 import { verifyPassword, createSession } from '$lib/server/auth.js';
 
 const MAX_ATTEMPTS = 5;
 const LOCK_MS = 15 * 60 * 1000;
+// Pre-computed dummy hash to prevent user enumeration via timing
+const DUMMY_HASH = await bcrypt.hash('dummy-constant-work', 12);
 
 export const actions: Actions = {
   default: async (event) => {
@@ -26,13 +29,10 @@ export const actions: Actions = {
     }
 
     const user = db.findUserByEmail(email);
-    if (!user) {
-      db.incrementRateLimit(email);
-      return fail(401, { error: 'E-Mail oder Passwort falsch' });
-    }
+    // Always run bcrypt to prevent user enumeration via timing
+    const valid = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
 
-    const valid = await verifyPassword(password, user.password_hash);
-    if (!valid) {
+    if (!user || !valid) {
       db.incrementRateLimit(email);
       const rlAfter = db.getRateLimit(email);
       if (rlAfter && rlAfter.attempts >= MAX_ATTEMPTS) {
