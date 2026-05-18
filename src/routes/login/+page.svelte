@@ -19,7 +19,7 @@
       <label>
         E-Mail
         <input type="email" name="email" required autofocus
-          value={form?.email ?? ''} />
+          value="" />
       </label>
 
       <label>

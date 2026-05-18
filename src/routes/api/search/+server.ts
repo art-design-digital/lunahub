@@ -7,6 +7,6 @@ export const GET: RequestHandler = ({ locals, url }) => {
   const q = url.searchParams.get('q')?.trim();
   if (!q || q.length < 2) return json([]);
   if (!store.searchIndex) return json([]);
-  const results = store.searchIndex.search(q, { limit: 50 });
+  const results = store.searchIndex.search(q).slice(0, 50);
   return json(results);
 };
