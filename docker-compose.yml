@@ -1,0 +1,25 @@
+# docker-compose.yml
+services:
+  fileorganizer:
+    build: .
+    container_name: fileorganizer
+    volumes:
+      - /volume1/Projekte:/data/projekte:ro   # NAS-Pfad hier anpassen!
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - DATA_DIR=/app/data
+      - CONFIG_PATH=/app/config.json
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - fileorganizer
