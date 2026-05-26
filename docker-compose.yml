@@ -1,8 +1,8 @@
 # docker-compose.yml
 services:
-  fileorganizer:
+  lunahub:
     build: .
-    container_name: fileorganizer
+    container_name: lunahub
     volumes:
       - /volume1/Projekte:/data/projekte:ro   # NAS-Pfad hier anpassen!
       - ./data:/app/data
@@ -10,6 +10,10 @@ services:
       - NODE_ENV=production
       - DATA_DIR=/app/data
       - CONFIG_PATH=/app/config.json
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID}
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+      - AZURE_CLIENT_SECRET=${AZURE_CLIENT_SECRET}
+      - ORIGIN=${ORIGIN}
     ports:
       - "3000:3000"
     restart: unless-stopped
@@ -22,4 +26,4 @@ services:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     restart: unless-stopped
     depends_on:
-      - fileorganizer
+      - lunahub

@@ -1,17 +1,26 @@
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 const LINK_EXTENSIONS = new Set(['.jpg', '.jpeg', '.tif', '.tiff', '.png', '.eps', '.ai', '.psd', '.svg']);
 const MIN_NAME_LENGTH = 5;
 
-export function extractInddLinks(inddPath: string): string[] {
+export async function extractInddLinks(inddPath: string): Promise<string[]> {
   const found = new Set<string>();
 
-  for (const encodingArgs of [[], ['-encoding', 'l']] as string[][]) {
+  // On macOS use plain strings; on Linux also try -encoding l for UTF-16 LE
+  const encodingVariants: string[][] = process.platform === 'linux'
+    ? [[], ['-encoding', 'l']]
+    : [[]];
+
+  for (const encodingArgs of encodingVariants) {
     try {
-      const output = execFileSync('strings', [...encodingArgs, inddPath], {
-        timeout: 60_000,
-        maxBuffer: 50 * 1024 * 1024,
-      }).toString('utf-8', 0, 50 * 1024 * 1024);
+      const { stdout } = await execFileAsync('strings', [...encodingArgs, inddPath], {
+        timeout: 30_000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      const output = stdout.slice(0, 1_000_000);
 
       for (const line of output.split('\n')) {
         const trimmed = line.trim();

@@ -2,13 +2,36 @@
 import Database from 'better-sqlite3';
 
 export function createDb(path: string) {
-  const db = new Database(path);
+  const sqliteDb = new Database(path);
 
-  db.exec(`
+  // Migrate: drop password_hash column and rate_limits table if they exist from old schema
+  const hasPasswordHash = sqliteDb
+    .prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('users') WHERE name = 'password_hash'")
+    .get() as { cnt: number };
+
+  if (hasPasswordHash.cnt > 0) {
+    sqliteDb.pragma('foreign_keys = OFF');
+    sqliteDb.transaction(() => {
+      sqliteDb.exec(`
+        DROP TABLE IF EXISTS users_new;
+        CREATE TABLE users_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          email TEXT UNIQUE NOT NULL,
+          created_at INTEGER DEFAULT (unixepoch())
+        );
+        INSERT INTO users_new (id, email, created_at) SELECT id, email, created_at FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+        DROP TABLE IF EXISTS rate_limits;
+      `);
+    })();
+    sqliteDb.pragma('foreign_keys = ON');
+  }
+
+  sqliteDb.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
       created_at INTEGER DEFAULT (unixepoch())
     );
     CREATE TABLE IF NOT EXISTS sessions (
@@ -17,62 +40,60 @@ export function createDb(path: string) {
       expires_at INTEGER NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
-    CREATE TABLE IF NOT EXISTS rate_limits (
-      email TEXT PRIMARY KEY,
-      attempts INTEGER DEFAULT 0,
-      locked_until INTEGER DEFAULT 0
-    );
   `);
 
+  const stmts = {
+    insertUser: sqliteDb.prepare('INSERT OR IGNORE INTO users (email) VALUES (?)'),
+    findByEmail: sqliteDb.prepare('SELECT id, email FROM users WHERE email = ?'),
+    findById: sqliteDb.prepare('SELECT id, email FROM users WHERE id = ?'),
+    deleteUser: sqliteDb.prepare('DELETE FROM users WHERE email = ?'),
+    insertSession: sqliteDb.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)'),
+    findSession: sqliteDb.prepare('SELECT * FROM sessions WHERE token = ? AND expires_at > ?'),
+    deleteSession: sqliteDb.prepare('DELETE FROM sessions WHERE token = ?'),
+    deleteExpired: sqliteDb.prepare('DELETE FROM sessions WHERE expires_at <= ?'),
+    listUsers: sqliteDb.prepare('SELECT email, created_at FROM users ORDER BY email'),
+    deleteUserSessions: sqliteDb.prepare(
+      'DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE email = ?)'
+    ),
+  };
+
   return {
-    createUser(email: string, passwordHash: string) {
-      db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(email, passwordHash);
+    findOrCreateUser(email: string): { id: number; email: string } {
+      stmts.insertUser.run(email);
+      return stmts.findByEmail.get(email) as { id: number; email: string };
     },
     findUserByEmail(email: string) {
-      return (db.prepare('SELECT * FROM users WHERE email = ?').get(email) ?? null) as
-        { id: number; email: string; password_hash: string } | null;
+      return (stmts.findByEmail.get(email) ?? null) as { id: number; email: string } | null;
     },
     findUserById(id: number) {
-      return (db.prepare('SELECT id, email FROM users WHERE id = ?').get(id) ?? null) as
-        { id: number; email: string } | null;
+      return (stmts.findById.get(id) ?? null) as { id: number; email: string } | null;
     },
     deleteUser(email: string) {
-      db.prepare('DELETE FROM users WHERE email = ?').run(email);
+      sqliteDb.transaction(() => {
+        stmts.deleteUserSessions.run(email);
+        stmts.deleteUser.run(email);
+      })();
     },
     createSession(token: string, userId: number, expiresAt: number) {
-      db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)').run(token, userId, expiresAt);
+      stmts.insertSession.run(token, userId, expiresAt);
     },
     findSession(token: string) {
-      const now = Date.now();
-      return (db.prepare('SELECT * FROM sessions WHERE token = ? AND expires_at > ?').get(token, now) ?? null) as
+      return (stmts.findSession.get(token, Date.now()) ?? null) as
         { token: string; user_id: number; expires_at: number } | null;
     },
     deleteSession(token: string) {
-      db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+      stmts.deleteSession.run(token);
     },
     deleteExpiredSessions() {
-      db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(Date.now());
+      stmts.deleteExpired.run(Date.now());
     },
-    getRateLimit(email: string) {
-      return (db.prepare('SELECT * FROM rate_limits WHERE email = ?').get(email) ?? null) as
-        { email: string; attempts: number; locked_until: number } | null;
+    listUsers() {
+      return stmts.listUsers.all() as { email: string; created_at: number }[];
     },
-    incrementRateLimit(email: string) {
-      db.prepare(`
-        INSERT INTO rate_limits (email, attempts) VALUES (?, 1)
-        ON CONFLICT(email) DO UPDATE SET attempts = attempts + 1
-      `).run(email);
-    },
-    lockRateLimit(email: string, until: number) {
-      db.prepare('UPDATE rate_limits SET locked_until = ?, attempts = 0 WHERE email = ?').run(until, email);
-    },
-    resetRateLimit(email: string) {
-      db.prepare('DELETE FROM rate_limits WHERE email = ?').run(email);
-    }
   };
 }
 
-// Singleton für Produktion
+// Singleton for production
 import { mkdirSync } from 'fs';
 const DATA_DIR = process.env.DATA_DIR ?? './data';
 mkdirSync(DATA_DIR, { recursive: true });

@@ -4,8 +4,10 @@ export interface ProjectFile {
   name: string;
   ext: string;
   thumbId: string | null;  // SHA-256-Hash des Dateipfads, für /api/thumb/:id
+  filePath: string;         // Absoluter Pfad zur Datei
   datum: string;
   search: string;
+  textContent?: string;     // Extrahierter Text (PDF/INDD), nur server-seitig für den Suchindex
 }
 
 export interface Project {
@@ -44,8 +46,8 @@ export interface AppUser {
 
 export interface AppConfig {
   volume: string;
+  smbUrl?: string;
   clients: Array<{
     folder: string;
-    pattern: 'P-nummer';
   }>;
 }

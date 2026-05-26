@@ -12,17 +12,20 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   const id = params.id;
   if (!/^[0-9a-f]{16}$/.test(id)) error(400, 'Invalid thumb id');
 
-  let filePath: string | null = null;
-  for (const proj of store.projects) {
-    for (const file of proj.files) {
-      if (file.thumbId === id) {
-        filePath = `${proj.folder}/${file.name}`;
-        break;
+  // Try fast O(1) lookup first, fall back to linear scan if thumbMap not yet populated
+  let filePath = store.thumbMap.get(id);
+  if (!filePath) {
+    for (const proj of store.projects) {
+      for (let i = 0; i < proj.files.length; i++) {
+        if (proj.files[i].thumbId === id) {
+          const fps = (proj as any)._filePaths as string[] | undefined;
+          filePath = fps?.[i] ?? `${proj.folder}/${proj.files[i].name}`;
+          break;
+        }
       }
+      if (filePath) break;
     }
-    if (filePath) break;
   }
-
   if (!filePath) error(404);
 
   const thumbPath = getThumbPath(CACHE_DIR, id);
@@ -36,7 +39,7 @@ export const GET: RequestHandler = async ({ locals, params }) => {
   return new Response(stream as unknown as ReadableStream, {
     headers: {
       'Content-Type': 'image/jpeg',
-      'Cache-Control': 'public, max-age=86400',
+      'Cache-Control': 'private, max-age=86400',
     },
   });
 };

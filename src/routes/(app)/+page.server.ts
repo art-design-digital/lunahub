@@ -5,7 +5,7 @@ import { store } from '$lib/store.js';
 export const load: PageServerLoad = ({ locals }) => {
   return {
     user: locals.user,
-    initialProjects: store.projects,
     lastScan: store.lastScan?.toISOString() ?? null,
+    projectCount: store.projects.length,
   };
 };

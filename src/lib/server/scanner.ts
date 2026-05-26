@@ -1,15 +1,20 @@
 // src/lib/server/scanner.ts
-import { readdirSync, statSync, existsSync } from 'fs';
+import { readdir, stat } from 'fs/promises';
+import { existsSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { createHash } from 'crypto';
 import type { Project, ProjectFile } from '../types.js';
 import { config } from './config.js';
 import { extractInddLinks } from './indd-links.js';
+import { extractPdfText, extractInddText } from './pdf-text.js';
 
-const PROJECT_PATTERN = /^P\d{5,}/;
+// mtime cache for incremental scans (in-memory, cleared on full scan / restart)
+const folderMtimes = new Map<string, number>();
+
+const PROJECT_PATTERN = /^P\d{5,}/; // used only for parseFolderName, not for filtering
 const SKIP_FOLDERS = new Set(['_thumbs', 'Material', '__MACOSX']);
 const SKIP_PREFIXES = ['_', '.'];
-const DESIGN_EXTENSIONS = new Set(['.pdf', '.indd', '.ai', '.eps', '.psd']);
+const DESIGN_EXTENSIONS = new Set(['.pdf', '.indd', '.ai', '.eps', '.psd', '.jpg', '.jpeg', '.png', '.tif', '.tiff']);
 const MAX_DEPTH = 2;
 
 export function parseFolderName(folderName: string) {
@@ -44,15 +49,15 @@ function shouldSkip(name: string): boolean {
   return SKIP_FOLDERS.has(name) || SKIP_PREFIXES.some(p => name.startsWith(p));
 }
 
-function findDesignFiles(dir: string, baseDepth: number): string[] {
+async function findDesignFiles(dir: string, baseDepth: number): Promise<string[]> {
   const results: string[] = [];
   try {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!shouldSkip(entry.name)) {
           const depth = fullPath.split('/').length - baseDepth - 1;
-          if (depth < MAX_DEPTH) results.push(...findDesignFiles(fullPath, baseDepth));
+          if (depth < MAX_DEPTH) results.push(...await findDesignFiles(fullPath, baseDepth));
         }
       } else if (DESIGN_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
         results.push(fullPath);
@@ -62,52 +67,81 @@ function findDesignFiles(dir: string, baseDepth: number): string[] {
   return results.sort();
 }
 
-export async function scanClient(clientFolder: string, clientPath: string, isArchiv = false): Promise<Project[]> {
+// Tracks folders that were visited during incremental scan but had no design files
+// (used by runIncrementalScan to drop stale projects whose files were all removed)
+const visitedEmptyFolders = new Set<string>();
+
+export async function scanClient(clientFolder: string, clientPath: string, isArchiv = false, changedOnly = false): Promise<Project[]> {
   const projects: Project[] = [];
+  let skipped = 0;
+  let scanned = 0;
 
   const scanDir = async (dir: string, archiv: boolean) => {
     let entries: string[] = [];
-    try { entries = readdirSync(dir); } catch { return; }
+    try { entries = await readdir(dir); } catch { return; }
 
     for (const entry of entries.sort()) {
       const fullPath = join(dir, entry);
       try {
-        if (!statSync(fullPath).isDirectory()) continue;
+        if (!(await stat(fullPath)).isDirectory()) continue;
       } catch { continue; }
 
-      if (!PROJECT_PATTERN.test(entry)) {
-        // Archiv-Unterordner durchsuchen
-        if (entry === '_Archiv') {
-          try {
-            for (const yearDir of readdirSync(fullPath).sort()) {
-              const yearPath = join(fullPath, yearDir);
-              if (statSync(yearPath).isDirectory()) await scanDir(yearPath, true);
-            }
-          } catch { /* ignorieren */ }
-        }
+      if (shouldSkip(entry)) continue;
+
+      // Archiv-Unterordner durchsuchen
+      if (entry === '_Archiv') {
+        try {
+          for (const yearDir of (await readdir(fullPath)).sort()) {
+            const yearPath = join(fullPath, yearDir);
+            if ((await stat(yearPath)).isDirectory()) await scanDir(yearPath, true);
+          }
+        } catch { /* ignorieren */ }
         continue;
+      }
+
+      // mtime-based change detection for incremental scans
+      if (changedOnly) {
+        try {
+          const mtime = (await stat(fullPath)).mtimeMs;
+          const cached = folderMtimes.get(fullPath);
+          if (cached !== undefined && cached === mtime) {
+            skipped++;
+            continue; // Skip unchanged folder
+          }
+        } catch { /* If stat fails, re-scan to be safe */ }
       }
 
       const meta = parseFolderName(entry);
       const baseDepth = fullPath.split('/').length;
-      const filePaths = findDesignFiles(fullPath, baseDepth);
+      const filePaths = await findDesignFiles(fullPath, baseDepth);
 
-      if (filePaths.length === 0) continue;
+      if (filePaths.length === 0) {
+        if (changedOnly) {
+          try { folderMtimes.set(fullPath, (await stat(fullPath)).mtimeMs); } catch { /* ignore */ }
+          visitedEmptyFolders.add(fullPath);
+        }
+        continue;
+      }
 
       const inddPaths = filePaths.filter(p => extname(p).toLowerCase() === '.indd');
       const { linksPerIndd, missingLinks } = await extractInddLinksForProject(inddPaths, fullPath);
 
-      const files: ProjectFile[] = filePaths.map(fp => {
+      const files: ProjectFile[] = await Promise.all(filePaths.map(async (fp) => {
         const ext = extname(fp).toLowerCase();
         const stem = basename(fp, ext);
+        let textContent: string | undefined;
+        if (ext === '.pdf') textContent = (await extractPdfText(fp)) || undefined;
+        else if (ext === '.indd') textContent = (await extractInddText(fp)) || undefined;
         return {
           name: basename(fp),
           ext,
+          filePath: fp,
           thumbId: ['.indd', '.eps'].includes(ext) ? null : thumbId(fp),
           datum: parseDateFromFilename(stem),
           search: buildSearchTags(meta.projekt_nr, meta.name_raw, meta.client, stem, ext.slice(1), entry),
+          textContent,
         };
-      });
+      }));
 
       projects.push({
         id: meta.projekt_nr || entry,
@@ -119,10 +153,19 @@ export async function scanClient(clientFolder: string, clientPath: string, isArc
         _inddLinks: linksPerIndd,
         _filePaths: filePaths,
       } as Project & { _inddLinks: Record<string, string[]>; _filePaths: string[] });
+
+      // Update mtime cache after scanning
+      if (changedOnly) {
+        try { folderMtimes.set(fullPath, (await stat(fullPath)).mtimeMs); } catch { /* ignore */ }
+      }
+      scanned++;
     }
   };
 
   await scanDir(clientPath, isArchiv);
+  if (changedOnly) {
+    console.log(`[scan] ${clientFolder}: ${scanned} neu gescannt, ${skipped} unverändert übersprungen`);
+  }
   return projects;
 }
 
@@ -131,8 +174,9 @@ async function extractInddLinksForProject(inddPaths: string[], projectFolder: st
   let missingLinks = false;
 
   for (const inddPath of inddPaths) {
-    const links = extractInddLinks(inddPath);
+    const links = await extractInddLinks(inddPath);
     linksPerIndd[basename(inddPath)] = links;
+    if (missingLinks) continue; // Already flagged, just collect links
     // Fehlende Links: prüfen ob Datei im Projektordner oder Material-Ordner liegt
     for (const link of links) {
       const candidates = [
@@ -150,6 +194,8 @@ async function extractInddLinksForProject(inddPaths: string[], projectFolder: st
 }
 
 export async function runFullScan(): Promise<Project[]> {
+  folderMtimes.clear();
+  visitedEmptyFolders.clear();
   const allProjects: Project[] = [];
   for (const client of config.clients) {
     const clientPath = join(config.volume, client.folder);
@@ -158,4 +204,55 @@ export async function runFullScan(): Promise<Project[]> {
     allProjects.push(...projects);
   }
   return allProjects;
+}
+
+export async function runIncrementalScan(existingProjects: Project[]): Promise<Project[]> {
+  const existingByFolder = new Map(existingProjects.map(p => [p.folder, p]));
+  const scannedFolders = new Set<string>();
+  const newProjects: Project[] = [];
+  visitedEmptyFolders.clear();
+
+  for (const client of config.clients) {
+    const clientPath = join(config.volume, client.folder);
+    if (!existsSync(clientPath)) continue;
+    const projects = await scanClient(client.folder, clientPath, false, true);
+    for (const p of projects) {
+      scannedFolders.add(p.folder);
+    }
+    newProjects.push(...projects);
+  }
+
+  // Merge: keep unchanged projects from existing, replace changed ones, drop deleted
+  const result: Project[] = [];
+  let dropped = 0;
+  for (const existing of existingProjects) {
+    if (scannedFolders.has(existing.folder)) {
+      // This folder was re-scanned, use new version
+      const updated = newProjects.find(p => p.folder === existing.folder);
+      if (updated) result.push(updated);
+    } else if (visitedEmptyFolders.has(existing.folder)) {
+      // Folder was re-scanned but has no design files anymore — drop
+      folderMtimes.delete(existing.folder);
+      dropped++;
+    } else if (existsSync(existing.folder)) {
+      // Folder unchanged (mtime matched) and still exists on disk
+      result.push(existing);
+    } else {
+      // Folder was deleted from disk — drop from store
+      folderMtimes.delete(existing.folder);
+      dropped++;
+    }
+  }
+  // Add any new projects not previously in the store
+  for (const p of newProjects) {
+    if (!existingByFolder.has(p.folder)) {
+      result.push(p);
+    }
+  }
+
+  const changed = newProjects.length;
+  const kept = result.length - changed;
+  console.log(`[scan] Inkrementell: ${changed} neu gescannt, ${kept} unverändert, ${dropped} gelöscht`);
+
+  return result;
 }

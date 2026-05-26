@@ -1,10 +1,8 @@
 import MiniSearch from 'minisearch';
-import { extname } from 'path';
 import type { Project } from '../types.js';
-import { extractPdfText, extractInddText } from './pdf-text.js';
 
 export interface SearchDoc {
-  id: string;           // eindeutig: filePath
+  id: string;
   fileName: string;
   projectName: string;
   projektnr: string;
@@ -20,30 +18,21 @@ export function buildSearchIndex(projects: (Project & { _filePaths: string[] })[
     searchOptions: { prefix: true, fuzzy: 0.15 },
   });
 
-  const docs: SearchDoc[] = [];
-
   for (const project of projects) {
-    for (const filePath of project._filePaths ?? []) {
-      const ext = extname(filePath).toLowerCase();
-      let text = '';
-      if (ext === '.pdf') text = extractPdfText(filePath);
-      else if (ext === '.indd') text = extractInddText(filePath);
-      else continue; // AI/EPS/PSD — kein Text
-
-      if (!text.trim()) continue;
-
-      docs.push({
-        id: filePath,
-        fileName: filePath.split('/').pop()!,
+    for (let i = 0; i < project.files.length; i++) {
+      const file = project.files[i];
+      const fullPath = project._filePaths[i];
+      index.add({
+        id: fullPath,
+        fileName: file.name,
         projectName: project.meta.name,
         projektnr: project.meta.projekt_nr,
         folder: project.folder,
-        ext,
-        text,
+        ext: file.ext,
+        text: [file.search, file.textContent ?? ''].join(' '),
       });
     }
   }
 
-  index.addAll(docs);
   return index;
 }

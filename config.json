@@ -1,7 +1,8 @@
 {
-  "volume": "/data/projekte",
+  "volume": "/Volumes/Projekte",
   "clients": [
-    { "folder": "BUESCH", "pattern": "P-nummer" },
-    { "folder": "EMV",    "pattern": "P-nummer" }
+    { "folder": "BUESCH" },
+    { "folder": "Wannenwetsch" },
+    { "folder": "Angermueller" }
   ]
 }
