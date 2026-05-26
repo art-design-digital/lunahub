@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3", "gcc", "ghostscript", "poppler_utils", "binutils", "imagemagick"]
+nixPkgs = ["nodejs_22", "python3", "gcc", "ghostscript", "poppler_utils", "binutils", "imagemagick"]
 
 [phases.install]
 cmds = ["npm ci"]
