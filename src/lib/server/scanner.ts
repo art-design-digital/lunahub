@@ -12,10 +12,9 @@ import { extractPdfText, extractInddText } from './pdf-text.js';
 const folderMtimes = new Map<string, number>();
 
 const PROJECT_PATTERN = /^P\d{5,}/; // used only for parseFolderName, not for filtering
-const SKIP_FOLDERS = new Set(['_thumbs', 'Material', '__MACOSX']);
-const SKIP_PREFIXES = ['_', '.'];
+const SKIP_FOLDERS = new Set(['_thumbs', '__MACOSX']);
+const SKIP_PREFIXES = ['.'];
 const DESIGN_EXTENSIONS = new Set(['.pdf', '.indd', '.ai', '.eps', '.psd', '.jpg', '.jpeg', '.png', '.tif', '.tiff']);
-const MAX_DEPTH = 2;
 
 export function parseFolderName(folderName: string) {
   const match = folderName.match(/^(P(\d{2})\d+)_([^_-]+)[_-](.+)$/);
@@ -49,15 +48,14 @@ function shouldSkip(name: string): boolean {
   return SKIP_FOLDERS.has(name) || SKIP_PREFIXES.some(p => name.startsWith(p));
 }
 
-async function findDesignFiles(dir: string, baseDepth: number): Promise<string[]> {
+async function findDesignFiles(dir: string): Promise<string[]> {
   const results: string[] = [];
   try {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (!shouldSkip(entry.name)) {
-          const depth = fullPath.split('/').length - baseDepth - 1;
-          if (depth < MAX_DEPTH) results.push(...await findDesignFiles(fullPath, baseDepth));
+          results.push(...await findDesignFiles(fullPath));
         }
       } else if (DESIGN_EXTENSIONS.has(extname(entry.name).toLowerCase())) {
         results.push(fullPath);
@@ -112,8 +110,7 @@ export async function scanClient(clientFolder: string, clientPath: string, isArc
       }
 
       const meta = parseFolderName(entry);
-      const baseDepth = fullPath.split('/').length;
-      const filePaths = await findDesignFiles(fullPath, baseDepth);
+      const filePaths = await findDesignFiles(fullPath);
 
       if (filePaths.length === 0) {
         if (changedOnly) {
