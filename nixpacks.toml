@@ -8,4 +8,4 @@ cmds = ["npx --yes n 22.14.0", "hash -r", "npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "node build/index.js"
+cmd = "node .next/standalone/server.js"

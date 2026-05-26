@@ -1,8 +1,8 @@
 // src/lib/server/scan-store.ts
 // Shared scan post-processing: builds indices from scanned projects and updates the store
-import { store } from '$lib/store.js';
-import { buildSearchIndex } from './search-index.js';
-import type { Project, InddLinkEntry, InddEntry } from '../types.js';
+import { store } from '@/lib/store';
+import { buildSearchIndex } from './search-index';
+import type { Project, InddLinkEntry, InddEntry } from '../types';
 
 type ScannedProject = Project & { _inddLinks: Record<string, string[]>; _filePaths: string[] };
 

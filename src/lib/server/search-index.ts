@@ -1,5 +1,5 @@
 import MiniSearch from 'minisearch';
-import type { Project } from '../types.js';
+import type { Project } from '../types';
 
 export interface SearchDoc {
   id: string;

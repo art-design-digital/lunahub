@@ -3,10 +3,10 @@ import { readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, extname, basename } from 'path';
 import { createHash } from 'crypto';
-import type { Project, ProjectFile } from '../types.js';
-import { config } from './config.js';
-import { extractInddLinks } from './indd-links.js';
-import { extractPdfText, extractInddText } from './pdf-text.js';
+import type { Project, ProjectFile } from '../types';
+import { config } from './config';
+import { extractInddLinks } from './indd-links';
+import { extractPdfText, extractInddText } from './pdf-text';
 
 // mtime cache for incremental scans (in-memory, cleared on full scan / restart)
 const folderMtimes = new Map<string, number>();

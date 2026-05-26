@@ -1,8 +1,8 @@
 // src/lib/store.ts
 // globalThis ensures a true singleton in Vite dev mode (SSR modules re-evaluated per request)
-import type { Project, InddLinkEntry, InddEntry } from './types.js';
+import type { Project, InddLinkEntry, InddEntry } from './types';
 import type MiniSearch from 'minisearch';
-import type { SearchDoc } from './server/search-index.js';
+import type { SearchDoc } from './server/search-index';
 
 interface AppStore {
   projects: Project[];

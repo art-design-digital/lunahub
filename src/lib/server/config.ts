@@ -1,7 +1,7 @@
 // src/lib/server/config.ts
 import { readFileSync } from 'fs';
 import { isAbsolute } from 'path';
-import type { AppConfig } from '../types.js';
+import type { AppConfig } from '../types';
 
 export function loadConfig(path: string): AppConfig {
   const raw = JSON.parse(readFileSync(path, 'utf-8'));

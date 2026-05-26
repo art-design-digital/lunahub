@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createDb } from './db.js';
+import { createDb } from './db';
 import Database from 'better-sqlite3';
 import { mkdtempSync } from 'fs';
 import { join } from 'path';

@@ -1,7 +1,7 @@
 // src/lib/server/auth.ts
 import { randomBytes } from 'crypto';
-import { db } from './db.js';
-import type { RequestEvent } from '@sveltejs/kit';
+import { cookies } from 'next/headers';
+import { db } from './db';
 
 const SESSION_COOKIE = 'session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 Tage
@@ -10,29 +10,32 @@ export function generateToken(): string {
   return randomBytes(32).toString('hex');
 }
 
-export function createSession(event: RequestEvent, userId: number): void {
+export async function createSession(userId: number, isSecure: boolean): Promise<void> {
   const token = generateToken();
   const expiresAt = Date.now() + SESSION_TTL_MS;
   db.createSession(token, userId, expiresAt);
-  event.cookies.set(SESSION_COOKIE, token, {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: event.url.protocol === 'https:',
+    secure: isSecure,
     sameSite: 'lax',
     maxAge: SESSION_TTL_MS / 1000,
     path: '/',
   });
 }
 
-export function destroySession(event: RequestEvent): void {
-  const token = event.cookies.get(SESSION_COOKIE);
+export async function destroySession(): Promise<void> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (token) {
     db.deleteSession(token);
-    event.cookies.delete(SESSION_COOKIE, { path: '/' });
+    cookieStore.delete(SESSION_COOKIE);
   }
 }
 
-export function getSessionUser(event: RequestEvent): { id: number; email: string } | null {
-  const token = event.cookies.get(SESSION_COOKIE);
+export async function getSessionUser(): Promise<{ id: number; email: string } | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const session = db.findSession(token);
   if (!session) return null;

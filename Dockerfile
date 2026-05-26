@@ -18,9 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     imagemagick \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 COPY config.json ./config.json
 COPY cli.js ./cli.js
 
@@ -29,6 +29,7 @@ ENV DATA_DIR=/app/data
 ENV CONFIG_PATH=/app/config.json
 ENV VOLUME_PATH=/data/projekte
 ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
 EXPOSE 3000
-CMD ["node", "build/index.js"]
+CMD ["node", "server.js"]

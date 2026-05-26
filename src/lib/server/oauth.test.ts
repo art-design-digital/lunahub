@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildAuthUrl, validateEmailDomain } from './oauth.js';
-import type { VerifiedClaims } from './oauth.js';
+import { buildAuthUrl, validateEmailDomain } from './oauth';
+import type { VerifiedClaims } from './oauth';
 
 /** Test-only: decode JWT payload without signature verification */
 function parseIdToken(idToken: string): VerifiedClaims {
