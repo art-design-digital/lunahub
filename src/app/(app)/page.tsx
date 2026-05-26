@@ -50,10 +50,20 @@ export default function AppPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [s, p] = await Promise.all([
-          fetch('/api/status').then(r => r.json()),
-          fetch('/api/projects').then(r => r.json()),
+        const [sRes, pRes] = await Promise.all([
+          fetch('/api/status'),
+          fetch('/api/projects'),
         ]);
+        if (sRes.status === 401 || pRes.status === 401) {
+          window.location.href = '/login';
+          return;
+        }
+        if (!sRes.ok || !pRes.ok) {
+          setLoadError(`Server-Fehler: ${sRes.status}/${pRes.status}`);
+          return;
+        }
+        const s = await sRes.json();
+        const p = await pRes.json();
         setNasOnline(s.nasOnline);
         setSmbUrl(s.smbUrl);
         setScanError(s.scanError ?? null);
@@ -78,7 +88,9 @@ export default function AppPage() {
 
     setScanning(true);
     try {
-      const res = await fetch('/api/refresh', { method: 'POST' }).then(r => r.json());
+      const refreshRes = await fetch('/api/refresh', { method: 'POST' });
+      if (refreshRes.status === 401) { window.location.href = '/login'; return; }
+      const res = await refreshRes.json();
       if (res.status === 'cooldown') {
         setScanning(false);
         setCooldownMsg(`Bitte ${res.remaining} Min. warten`);
@@ -100,7 +112,9 @@ export default function AppPage() {
           setScanError('Scan-Timeout');
           return;
         }
-        const s = await fetch('/api/status').then(r => r.json());
+        const sRes = await fetch('/api/status');
+        if (sRes.status === 401) { clearInterval(poll); window.location.href = '/login'; return; }
+        const s = await sRes.json();
         if (!s.scanning) {
           clearInterval(poll);
           setLastScan(s.lastScan);
@@ -108,8 +122,8 @@ export default function AppPage() {
           setScanError(s.scanError ?? null);
           setScanDuration(s.scanDuration ?? null);
           setScanning(false);
-          const p = await fetch('/api/projects').then(r => r.json());
-          setProjects(p);
+          const pRes = await fetch('/api/projects');
+          if (pRes.ok) setProjects(await pRes.json());
         }
       } catch {
         clearInterval(poll);

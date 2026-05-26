@@ -141,7 +141,7 @@ export async function scanClient(clientFolder: string, clientPath: string, isArc
       }));
 
       projects.push({
-        id: meta.projekt_nr || entry,
+        id: meta.projekt_nr || `${clientFolder}/${entry}`,
         folder: fullPath,
         meta,
         files,

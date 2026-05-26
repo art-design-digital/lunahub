@@ -1,6 +1,8 @@
 // src/lib/server/auto-scan.ts
 // Auto-scan timer — replaces the SvelteKit hooks.server.ts scan logic
 // Called lazily when the first API request comes in.
+// IMPORTANT: Next.js must run in single-worker mode (default for `next start`).
+// Multi-worker setups would cause parallel scans and split globalThis state.
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { config } from './config';
@@ -17,8 +19,14 @@ async function doScan() {
   if (store.scanning) return;
   if (store.lastScan && (Date.now() - store.lastScan.getTime()) < MIN_SCAN_INTERVAL_MS) return;
 
+  // Skip scan if config has no clients (fallback config)
+  if (config.clients.length === 0) {
+    console.log('[scan] Keine Clients konfiguriert – übersprungen');
+    return;
+  }
+
   // NAS-Erreichbarkeit prüfen bevor Store geleert wird
-  const firstClientPath = join(config.volume, config.clients[0]?.folder ?? '');
+  const firstClientPath = join(config.volume, config.clients[0].folder);
   if (!existsSync(firstClientPath)) {
     console.log('[scan] NAS nicht erreichbar – übersprungen');
     return;

@@ -11,6 +11,7 @@ const THUMB_SIZE = 500;
 const MAX_CONCURRENT_THUMBS = 4;
 let activeThumbJobs = 0;
 const thumbQueue: Array<{ resolve: (v: boolean) => void; fn: () => Promise<boolean> }> = [];
+const inProgress = new Set<string>();
 
 function enqueueThumb(fn: () => Promise<boolean>): Promise<boolean> {
   return new Promise((resolve) => {
@@ -61,7 +62,14 @@ async function doGenerateThumb(filePath: string, thumbPath: string): Promise<boo
 export async function generateThumb(filePath: string, thumbPath: string): Promise<boolean> {
   // Fast path: already cached
   if (existsSync(thumbPath)) return true;
-  return enqueueThumb(() => doGenerateThumb(filePath, thumbPath));
+  // Deduplicate concurrent requests for the same thumb
+  if (inProgress.has(thumbPath)) return false;
+  inProgress.add(thumbPath);
+  try {
+    return await enqueueThumb(() => doGenerateThumb(filePath, thumbPath));
+  } finally {
+    inProgress.delete(thumbPath);
+  }
 }
 
 // PDF: pdftoppm (poppler) — Seite 1, funktioniert auf macOS + Linux
