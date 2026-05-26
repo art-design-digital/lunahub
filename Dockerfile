@@ -26,6 +26,7 @@ COPY cli.js ./cli.js
 ENV NODE_ENV=production
 ENV DATA_DIR=/app/data
 ENV CONFIG_PATH=/app/config.json
+ENV VOLUME_PATH=/data/projekte
 ENV PORT=3000
 
 EXPOSE 3000

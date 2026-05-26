@@ -15,4 +15,11 @@ export function loadConfig(path: string): AppConfig {
 }
 
 const configPath = process.env.CONFIG_PATH ?? 'config.json';
-export const config: AppConfig = loadConfig(configPath);
+const loaded = loadConfig(configPath);
+
+// Allow VOLUME_PATH env to override config.json (useful for Docker)
+if (process.env.VOLUME_PATH) {
+  loaded.volume = process.env.VOLUME_PATH;
+}
+
+export const config: AppConfig = loaded;
